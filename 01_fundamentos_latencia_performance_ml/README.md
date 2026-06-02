@@ -1,5 +1,22 @@
 # Aula 01 — Fundamentos de Latência e Performance em ML
 
+## 💼 Caso de Uso: Detecção de Fraude Bancária em Tempo Real
+
+Toda a aula é construída em torno de **um único cenário aplicado**: um sistema
+antifraude que analisa transações de cartão à medida que acontecem. Se uma
+transação fraudulenta demora a ser sinalizada — ou seja, se a latência da
+decisão é alta — o débito já caiu, o banco perde dinheiro e o cliente perde
+confiança. O objetivo do produto é direto: **reduzir o tempo de resposta a
+praticamente zero do ponto de vista do usuário**, mantendo qualidade de
+detecção compatível com SLAs do mercado de pagamentos (tipicamente
+P99 ≤ 50 ms ponta-a-ponta, com a inferência do modelo respondendo em poucos
+milissegundos).
+
+O notebook da aula usa um **dataset sintético de transações** e responde a
+uma pergunta central sob vários ângulos: *quanto tempo o nosso modelo leva
+para decidir, onde estão os gargalos e qual configuração aceita o SLA
+real-time?*
+
 ## 🎯 Objetivos de Aprendizagem
 
 Ao final desta aula, o aluno será capaz de:
@@ -79,15 +96,10 @@ A complexidade computacional de diferentes algoritmos impacta diretamente a lat�
 ├── README.md                        # Este arquivo
 ├── requirements.txt                 # Dependências da aula
 ├── notebooks/
-│   ├── 01_exploracao.ipynb          # EDA e análise do dataset
-│   ├── 02_treinamento.ipynb         # Treinamento e profiling
-│   └── 03_avaliacao.ipynb           # Avaliação de latência e métricas
+│   └── 01_fundamentos_latencia_inferencia.ipynb  # Notebook principal da aula
 ├── src/
 │   ├── __init__.py                  # Inicialização do pacote
-│   ├── data_preprocessing.py        # Pré-processamento de dados
-│   ├── model.py                     # Definição dos modelos com benchmark
-│   ├── training.py                  # Lógica de treinamento e tuning
-│   ├── evaluation.py                # Métricas de performance e latência
+│   ├── data_preprocessing.py        # Pré-processamento e geração de dados
 │   └── utils.py                     # Utilitários (save/load, configs)
 ├── data/
 │   ├── raw/
@@ -96,9 +108,7 @@ A complexidade computacional de diferentes algoritmos impacta diretamente a lat�
 │   └── README.md                    # Documentação do dataset
 ├── tests/
 │   ├── __init__.py
-│   ├── test_preprocessing.py        # Testes do pré-processamento
-│   ├── test_model.py                # Testes do modelo
-│   └── test_evaluation.py           # Testes de avaliação
+│   └── test_preprocessing.py        # Testes do pré-processamento
 └── outputs/
     ├── models/                      # Modelos serializados
     ├── figures/                     # Gráficos gerados
@@ -120,12 +130,10 @@ pip install -r requirements.txt
 python -c "from src.data_preprocessing import DataPreprocessor; DataPreprocessor.generate_synthetic_dataset('data/raw/dataset.csv')"
 ```
 
-### 3. Executar Notebooks (sequencialmente)
+### 3. Executar Notebook
 
 ```bash
-jupyter notebook notebooks/01_exploracao.ipynb
-jupyter notebook notebooks/02_treinamento.ipynb
-jupyter notebook notebooks/03_avaliacao.ipynb
+jupyter notebook notebooks/01_fundamentos_latencia_inferencia.ipynb
 ```
 
 ### 4. Executar via Scripts Python
@@ -137,13 +145,13 @@ python -m src.training
 
 ## 📊 Datasets
 
-O dataset utilizado é **sintético**, gerado para simular um problema de classificação binária
-com features de diferentes escalas e correlações. Consulte [data/README.md](data/README.md) para
-detalhes completos.
+O dataset utilizado é **sintético** e simula um stream de transações de cartão
+para um sistema de detecção de fraude em tempo real (consulte
+[data/README.md](data/README.md) para detalhes completos das colunas).
 
-- **Instâncias:** 10.000
-- **Features:** 15 numéricas
-- **Target:** Binário (0/1), balanceamento ~50/50
+- **Transações:** 10.000
+- **Features:** 15 numéricas (valor, hora, distância, velocidade, scores de risco…)
+- **Target:** Binário (`0` = legítima, `1` = fraude), desbalanceado (~95% / ~5%)
 
 ## 🧪 Testes
 
@@ -167,13 +175,6 @@ pytest tests/ -v --tb=short
    *NeurIPS '15*.
 5. **Li, M. et al.** (2014). "Scaling Distributed Machine Learning with the Parameter Server."
    *OSDI '14*.
-
-## 🎥 Vídeos Relacionados
-
-- **Vídeo 1:** Introdução à latência em sistemas de ML
-- **Vídeo 2:** Demonstração prática — Profiling de modelos
-- **Vídeo 3:** Hands-on — Comparação de algoritmos e batch sizes
-- **Vídeo 4:** Análise de resultados e melhores práticas
 
 ## 🔗 Links Úteis
 

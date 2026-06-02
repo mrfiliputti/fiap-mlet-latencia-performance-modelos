@@ -1,6 +1,11 @@
 """
 Módulo de pré-processamento de dados para benchmarking de latência em ML.
 
+Caso de uso da Aula 01: **detecção de fraude bancária em tempo real**.
+Cada linha representa uma transação de cartão e o objetivo é sinalizar
+fraudes (target=1) com a menor latência possível, pois um atraso na
+detecção implica perda financeira direta para o banco.
+
 Implementa o pipeline de pré-processamento conforme discutido na seção
 'Fundamentação Teórica' da aula, onde a latência de pré-processamento
 (L_pre) é um dos componentes da latência total do sistema.
@@ -21,6 +26,29 @@ import pandas as pd
 from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+
+
+# Nomes de features alinhados ao caso de uso de detecção de fraude.
+# Os valores são gerados sinteticamente por make_classification, mas os
+# nomes representam sinais reais usados em sistemas antifraude (Bahnsen
+# et al., 2016; Carcillo et al., 2018).
+FRAUD_FEATURE_NAMES: list[str] = [
+    "tx_amount_z",            # valor da transação (z-score)
+    "amount_to_avg_ratio",    # razão entre valor atual e média do cliente
+    "hour_sin",               # hora do dia (componente sazonal)
+    "hour_cos",               # hora do dia (componente sazonal)
+    "time_since_last_tx_s",   # segundos desde a última transação
+    "distance_from_home_km",  # distância geográfica do endereço cadastrado
+    "distance_from_last_tx_km",  # distância da transação anterior
+    "merchant_risk_score",    # score de risco do estabelecimento
+    "mcc_risk_score",         # score de risco da categoria do comércio
+    "velocity_1h",            # nº de transações na última hora
+    "velocity_24h",           # nº de transações nas últimas 24h
+    "avg_amount_30d",         # ticket médio nos últimos 30 dias
+    "card_age_days",          # tempo de uso do cartão
+    "cross_border_score",     # indicador de operação internacional
+    "device_anomaly_score",   # anomalia do dispositivo/IP usado
+]
 
 
 class DataPreprocessor:
@@ -64,41 +92,49 @@ class DataPreprocessor:
         n_informative: int = 10,
         n_redundant: int = 2,
         random_state: int = 42,
+        fraud_rate: float = 0.05,
     ) -> pd.DataFrame:
         """
-        Gera dataset sintético de classificação binária para benchmarking.
+        Gera dataset sintético de **transações bancárias** para benchmarking.
 
-        O dataset é projetado para ter features informativas, redundantes e
-        ruidosas, permitindo avaliar como a complexidade dos dados impacta a
-        latência de diferentes algoritmos. Conforme Reddi et al. (2020),
-        benchmarks reproduzíveis são essenciais para comparações justas.
+        Simula um stream de transações de cartão onde a classe positiva
+        (target=1) representa fraude. As features são geradas com
+        ``sklearn.datasets.make_classification`` e renomeadas com termos
+        do domínio antifraude (valor, distância, velocidade, score de
+        risco do estabelecimento, etc.).
 
-        Referência:
-            Reddi, V. J. et al. (2020). MLPerf Inference Benchmark. ISCA '20.
+        O desbalanceamento (default ~5% de fraudes) reflete o cenário
+        real, onde a maioria das transações é legítima e a minoria
+        precisa ser sinalizada com latência mínima.
 
         Args:
             output_path: Caminho para salvar o CSV.
-            n_samples: Número de instâncias.
+            n_samples: Número de transações.
             n_features: Número total de features.
             n_informative: Número de features informativas.
             n_redundant: Número de features redundantes.
             random_state: Seed para reprodutibilidade.
+            fraud_rate: Proporção esperada de fraudes (classe 1).
 
         Returns:
             DataFrame com o dataset gerado.
         """
+        legit_rate = 1.0 - fraud_rate
         X, y = make_classification(
             n_samples=n_samples,
             n_features=n_features,
             n_informative=n_informative,
             n_redundant=n_redundant,
             n_clusters_per_class=2,
-            weights=[0.5, 0.5],
-            flip_y=0.03,
+            weights=[legit_rate, fraud_rate],
+            flip_y=0.01,
             random_state=random_state,
         )
 
-        feature_cols = [f"feature_{i}" for i in range(n_features)]
+        if n_features == len(FRAUD_FEATURE_NAMES):
+            feature_cols = list(FRAUD_FEATURE_NAMES)
+        else:
+            feature_cols = [f"feature_{i}" for i in range(n_features)]
         df = pd.DataFrame(X, columns=feature_cols)
         df["target"] = y
 
