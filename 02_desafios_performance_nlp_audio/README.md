@@ -1,12 +1,10 @@
 # Aula 02 — Desafios de Performance em NLP e Áudio
 
-> Disciplina: Engenharia de Machine Learning — FIAP PósTech (Mestrado)
+> Disciplina: Engenharia de Machine Learning — FIAP PosTech
 
 ---
 
 ## 🎯 Objetivos de Aprendizagem
-
-Esta é uma versão **simplificada e consolidada em um único notebook**, guiada por um caso de uso prático: um **assistente virtual de compras por voz** que precisa responder em tempo real.
 
 Ao final desta aula o aluno será capaz de:
 
@@ -64,7 +62,7 @@ A matriz de atenção $QK^T$ possui dimensões $n \times n$: cada token é compa
 | Matplotlib        | ≥ 3.7    | Visualizações                        |
 | Jupyter           | ≥ 1.0    | Notebook interativo                  |
 
-> O notebook desta aula foi mantido **leve e executável**, usando apenas `numpy` e `matplotlib`. As demais bibliotecas em `requirements.txt` permanecem disponíveis para exploração dos módulos em `src/`.
+> O notebook desta aula é **leve e autocontido**: usa apenas `numpy` e `matplotlib`, sem GPU, internet ou datasets externos.
 
 ---
 
@@ -73,30 +71,11 @@ A matriz de atenção $QK^T$ possui dimensões $n \times n$: cada token é compa
 ```
 02_desafios_performance_nlp_audio/
 ├── README.md                        # ← Você está aqui
-├── requirements.txt                 # Dependências da aula
+├── requirements.txt                 # Dependências da aula (numpy, matplotlib, jupyter)
 ├── notebooks/
 │   └── 00_assistente_virtual_latencia.ipynb  # Notebook único: latência da atenção O(n²)
-├── src/
-│   ├── __init__.py
-│   ├── data_preprocessing.py        # Tokenização, padding, Mel features
-│   ├── model.py                     # Attention vanilla, eficiente, KV-Cache
-│   ├── training.py                  # Benchmark e treinamento
-│   ├── evaluation.py                # Métricas de performance
-│   └── utils.py                     # Timers, I/O, configuração
-├── data/
-│   ├── raw/
-│   │   └── dataset.csv              # Sequências sintéticas + metadados
-│   ├── processed/
-│   └── README.md                    # Documentação do dataset
-├── tests/
-│   ├── __init__.py
-│   ├── test_preprocessing.py
-│   ├── test_model.py
-│   └── test_evaluation.py
 └── outputs/
-    ├── models/
-    ├── figures/
-    └── logs/
+    └── figures/                     # (opcional) figuras exportadas
 ```
 
 ---
@@ -132,30 +111,11 @@ O notebook é autocontido e executa de ponta a ponta, cobrindo:
 
 Esta versão simplificada **não depende de dataset externo**: os tensores usados na atenção são gerados sinteticamente com NumPy dentro do próprio notebook.
 
-Os módulos em `src/` e o dataset documentado em [`data/README.md`](data/README.md) permanecem disponíveis para quem quiser aprofundar.
-
----
-
-## 🧪 Testes
-
-```bash
-# Executar todos os testes
-pytest tests/ -v
-
-# Executar testes por módulo
-pytest tests/test_preprocessing.py -v
-pytest tests/test_model.py -v
-pytest tests/test_evaluation.py -v
-
-# Com cobertura
-pytest tests/ -v --tb=short
-```
-
 ---
 
 ## 📚 Referências
 
-Referências principais utilizadas no código (extraídas do material teórico da aula):
+Referências principais relacionadas aos conceitos da aula:
 
 1. **Vaswani, A. et al.** (2017). Attention Is All You Need. *NeurIPS*, v. 30, p. 5998-6008.
 2. **Dao, T. et al.** (2022). FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness. *NeurIPS*, v. 35.
@@ -165,14 +125,6 @@ Referências principais utilizadas no código (extraídas do material teórico d
 6. **Baevski, A. et al.** (2020). wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations. *NeurIPS*, v. 33.
 7. **Shazeer, N.** (2019). Fast Transformer Decoding: One Write-Head is All You Need. *arXiv:1911.02150*.
 8. **Katharopoulos, A. et al.** (2020). Transformers are RNNs: Fast Autoregressive Transformers with Linear Attention. *ICML*.
-
----
-
-## 🎥 Vídeos Relacionados
-
-- **Vídeo 1** — Configuração do ambiente e overview do caso de uso (assistente virtual de voz)
-- **Vídeo 2** — Complexidade O(n²) da atenção e hands-on medindo a latência em NumPy
-- **Vídeo 3** — Alternativas eficientes: Sparse, Linear e Flash Attention
 
 ---
 
