@@ -1,181 +1,154 @@
-# Aula 5 — Transfer Learning Eficiente e Adaptação de Modelos
+# Aula 05 — Transfer Learning Eficiente: PEFT, LoRA e QLoRA
+
+> Disciplina: Engenharia de Machine Learning — FIAP PosTech
+
+---
 
 ## 🎯 Objetivos de Aprendizagem
 
-Ao final desta aula, você será capaz de:
+Ao final desta aula o aluno será capaz de:
 
-1. **Compreender** os fundamentos de Transfer Learning e a hipótese de subespaços de baixa dimensionalidade (Aghajanyan et al., 2021)
-2. **Implementar** fine-tuning eficiente com LoRA (Hu et al., 2022) e QLoRA (Dettmers et al., 2023)
-3. **Comparar** técnicas PEFT: LoRA, Adapters, Prefix Tuning e Prompt Tuning
-4. **Exportar** modelos otimizados para ONNX com otimizações de grafo computacional
-5. **Avaliar** trade-offs entre parâmetros treináveis, memória GPU, latência e desempenho
-6. **Aplicar** estratégias de warm-up e caching para serving em produção
+1. **Compreender** por que treinar um LLM do zero é inviável para uma startup com recursos limitados.
+2. **Explicar** de forma simples o que são **transfer learning**, **fine-tuning completo** e **PEFT** (LoRA/QLoRA).
+3. **Medir** na prática quantos **parâmetros treináveis** cada estratégia exige.
+4. **Comparar** custo computacional e uso de memória entre fine-tuning completo, LoRA e QLoRA.
+5. **Avaliar** qual estratégia é **viável** para o hardware disponível (1 GPU).
+6. **Reconhecer** técnicas reais de adaptação (adapters, LoRA, QLoRA, prompt tuning) e seus trade-offs.
+
+---
+
+## 🧩 Caso de Uso
+
+A startup **AdvogAI** usa IA para **resumir contratos jurídicos automaticamente**. Em vez de criar um modelo do
+zero, ela **reutiliza um LLM pré-treinado** e o adapta ao domínio jurídico.
+
+```
+📄 Contrato → [LLM adaptado ao domínio jurídico] → 📝 Resumo das cláusulas
+```
+
+Treinar do zero exigiria bilhões de palavras, centenas de GPUs e meses de trabalho. O modelo precisa aprender
+**termos jurídicos**, a **estrutura de contratos** e o **contexto legal**, mas a empresa possui apenas **1 ou 2
+GPUs**, **orçamento limitado** e **prazos curtos**. A solução é a **adaptação eficiente** com **LoRA** e
+**QLoRA** (LoRA + quantização 4 bits), que permite fazer fine-tuning em uma única GPU. É nesse desafio que a
+aula foca.
+
+---
 
 ## 📖 Teoria-Chave
 
-### Hipótese de Subespaços de Baixa Dimensionalidade
+### Transfer Learning e PEFT
 
-O fine-tuning efetivo de modelos pré-treinados ocorre em subespaços de dimensionalidade intrínseca
-muito menor que o espaço total de parâmetros. Para muitas tarefas de NLP, esta dimensão é de
-apenas algumas centenas a poucos milhares, mesmo para modelos com bilhões de parâmetros
-(Li et al., 2018; Aghajanyan et al., 2021).
+- **Transfer learning:** reutilizar um modelo pré-treinado e ajustá-lo à tarefa alvo, economizando dados e tempo.
+- **Fine-tuning completo:** atualiza **todos** os parâmetros — adaptação máxima, custo altíssimo.
+- **PEFT:** ajusta apenas uma **pequena fração** dos parâmetros (< 3%), mantendo o modelo base congelado.
 
-### Low-Rank Adaptation (LoRA)
+### LoRA em uma linha
 
-LoRA injeta uma atualização de baixo rank parametrizada como:
+Uma camada tem uma matriz de pesos `W` (`d × d`). O LoRA congela `W` e aprende duas matrizes pequenas
+`A` (`d × r`) e `B` (`r × d`), com rank `r` pequeno (ex.: 8). Treina apenas `2·d·r` valores por camada.
 
-```
-h = W₀x + ΔWx = W₀x + BAx
-```
+| Estratégia | Parâmetros treinados | Memória | Viável em 1 GPU? |
+|---|---|---|---|
+| **Fine-tuning completo** | 100% | muito alta | ❌ Não |
+| **LoRA** | < 1% | média | ⚠️ Depende |
+| **QLoRA** (4 bits + LoRA) | < 1% | baixa | ✅ Sim |
 
-onde B ∈ ℝ^(d×r) e A ∈ ℝ^(r×k) com r ≪ min(d, k). Após treinamento, as matrizes BA
-podem ser mescladas com W₀ sem overhead de inferência (Hu et al., 2022).
+### Técnicas de PEFT (referência)
 
-### QLoRA
+| Técnica | Ideia central | Ganho |
+|---|---|---|
+| **Adapters** | camadas pequenas treináveis inseridas no modelo | poucos parâmetros extras |
+| **LoRA** | matrizes de baixo rank (A e B) | treina < 1% dos parâmetros |
+| **QLoRA** | LoRA + modelo base em 4 bits | cabe em 1 GPU |
+| **Prompt/Prefix Tuning** | treinar só vetores de entrada | ajuste ultraleve |
 
-QLoRA combina LoRA com quantização NF4 de 4 bits, possibilitando fine-tuning de modelos
-com bilhões de parâmetros em GPUs de consumo (Dettmers et al., 2023).
-
-### Otimização de Grafos Computacionais
-
-Ferramentas como ONNX Runtime, TorchScript e torch.compile aplicam otimizações de
-constant folding, fusão de operadores e compilação JIT para inferência de baixa latência.
+---
 
 ## 🛠️ Tecnologias Utilizadas
 
-| Biblioteca | Versão | Descrição |
-|-----------|--------|-----------|
-| PyTorch | ≥ 2.0.0 | Framework de Deep Learning |
-| Transformers | ≥ 4.35.0 | Modelos pré-treinados (Hugging Face) |
-| PEFT | ≥ 0.7.0 | Parameter-Efficient Fine-Tuning |
-| bitsandbytes | ≥ 0.41.0 | Quantização 4-bit / 8-bit |
-| ONNX Runtime | ≥ 1.16.0 | Otimização e inferência de grafos |
-| scikit-learn | ≥ 1.3.0 | Métricas e avaliação |
-| matplotlib / seaborn | ≥ 3.7 / 0.12 | Visualizações |
-| pytest | ≥ 7.4.0 | Testes unitários |
+| Biblioteca | Versão | Uso |
+|-----------|--------|-----|
+| Python     | ≥ 3.10 | Linguagem base |
+| NumPy      | ≥ 1.24 | Cálculos de parâmetros e estatísticas |
+| Pandas     | ≥ 2.0  | Tabela comparativa |
+| Matplotlib | ≥ 3.7  | Visualizações |
+| Jupyter    | ≥ 1.0  | Notebook interativo |
+
+> O notebook desta aula é **leve e autocontido**: usa apenas `numpy`, `pandas` e `matplotlib`, **sem GPU**,
+> internet ou datasets externos.
+
+---
 
 ## 📂 Estrutura de Arquivos
 
 ```
 05_transfer_learning_eficiente/
-├── README.md                        # Este arquivo
-├── requirements.txt                 # Dependências da aula
+├── README.md                                # ← Você está aqui
+├── requirements.txt                         # Dependências da aula
 ├── notebooks/
-│   ├── 01_exploracao.ipynb          # EDA + análise de modelos pré-treinados
-│   ├── 02_treinamento.ipynb         # Fine-tuning com LoRA/PEFT
-│   └── 03_avaliacao.ipynb           # Métricas, benchmarks e ONNX
-├── src/
-│   ├── __init__.py
-│   ├── data_preprocessing.py        # Pipeline de pré-processamento textual
-│   ├── model.py                     # Wrapper PEFT (LoRA, QLoRA, Adapters)
-│   ├── training.py                  # Treinamento com Hugging Face Trainer
-│   ├── evaluation.py                # Métricas e benchmarking de latência
-│   └── utils.py                     # Utilitários (save/load, config, timer)
-├── data/
-│   ├── raw/dataset.csv              # Dataset de classificação de domínio
-│   ├── processed/                   # Dados tokenizados (gerado em runtime)
-│   └── README.md                    # Documentação do dataset
-├── tests/
-│   ├── __init__.py
-│   ├── test_preprocessing.py        # Testes do DataPreprocessor
-│   ├── test_model.py                # Testes do PEFTModelWrapper
-│   └── test_evaluation.py           # Testes de métricas
+│   └── 00_advogai_transfer_learning.ipynb   # Notebook único: transfer learning, LoRA e QLoRA
 └── outputs/
-    ├── models/                      # Checkpoints e adaptadores salvos
-    ├── figures/                      # Gráficos gerados
-    └── logs/                         # Logs de treinamento
+    └── figures/                             # (opcional) figuras exportadas
 ```
+
+---
 
 ## 🚀 Como Executar
 
-### 1. Instalação de Dependências
+### 1. Instalar dependências
 
 ```bash
 cd 05_transfer_learning_eficiente
 pip install -r requirements.txt
+
+# ou, o mínimo para este notebook:
+pip install numpy pandas matplotlib jupyter
 ```
 
-### 2. Gerar Dataset Sintético
+### 2. Executar o notebook
 
 ```bash
-python -c "from src.data_preprocessing import generate_synthetic_dataset; generate_synthetic_dataset(output_path='data/raw/dataset.csv')"
+jupyter notebook notebooks/00_advogai_transfer_learning.ipynb
 ```
 
-### 3. Execução dos Notebooks (sequencial)
+O notebook é autocontido e executa de ponta a ponta, cobrindo:
 
-```bash
-jupyter notebook notebooks/01_exploracao.ipynb
-jupyter notebook notebooks/02_treinamento.ipynb
-jupyter notebook notebooks/03_avaliacao.ipynb
-```
+1. Contexto da startup AdvogAI e o desafio de adaptar um LLM com poucos recursos.
+2. Conceitos de transfer learning, fine-tuning completo e PEFT (adapters, LoRA, QLoRA, prompt tuning).
+3. Hands-on simulando três estratégias (fine-tuning completo × LoRA × QLoRA).
+4. Comparação dos resultados em tabela e gráficos (parâmetros treináveis, custo, memória).
+5. Discussão de técnicas reais de adaptação e seus trade-offs.
+6. Conclusão sobre a viabilidade de cada estratégia para a startup.
 
-### 4. Execução via Scripts Python
-
-```python
-from src.data_preprocessing import DataPreprocessor, generate_synthetic_dataset
-from src.model import PEFTModelWrapper
-from src.training import train_with_peft
-from src.evaluation import calculate_metrics, benchmark_latency
-
-# Gerar dados
-df = generate_synthetic_dataset(n_samples=5000, output_path="data/raw/dataset.csv")
-
-# Pré-processar
-preprocessor = DataPreprocessor(max_length=128)
-df = preprocessor.load_data("data/raw/dataset.csv")
-df = preprocessor.clean_data()
-df = preprocessor.prepare_features()
-train_df, val_df, test_df = preprocessor.split_data()
-
-# Treinar com LoRA
-model_wrapper = PEFTModelWrapper(model_name="distilbert-base-uncased", num_labels=5)
-model_wrapper.load_base_model()
-model_wrapper.apply_lora(r=16, lora_alpha=32)
-
-# Avaliar
-metrics = calculate_metrics(y_true, y_pred, label_names=list(preprocessor.label_map.keys()))
-```
+---
 
 ## 📊 Datasets
 
-Dataset sintético de classificação de domínio textual com 5 categorias:
-jurídico, tecnologia, financeiro, saúde, educação.
+Esta versão simplificada **não depende de dataset externo**: os números de parâmetros e a memória são
+calculados/simulados dentro do próprio notebook, permitindo comparar estratégias sem GPU.
 
-Detalhes completos em [data/README.md](data/README.md).
-
-## 🧪 Testes
-
-```bash
-# Executar todos os testes
-pytest tests/ -v
-
-# Executar testes específicos
-pytest tests/test_preprocessing.py -v
-pytest tests/test_model.py -v
-pytest tests/test_evaluation.py -v
-```
+---
 
 ## 📚 Referências
 
-- **Hu, E.J. et al. (2022)**. LoRA: Low-Rank Adaptation of Large Language Models. ICLR. [arXiv:2106.09685](https://arxiv.org/abs/2106.09685)
-- **Dettmers, T. et al. (2023)**. QLoRA: Efficient Finetuning of Quantized LLMs. NeurIPS. [arXiv:2305.14314](https://arxiv.org/abs/2305.14314)
-- **Aghajanyan, A. et al. (2021)**. Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning. ACL.
-- **Houlsby, N. et al. (2019)**. Parameter-Efficient Transfer Learning for NLP. ICML.
-- **Lester, B. et al. (2021)**. The Power of Scale for Parameter-Efficient Prompt Tuning. EMNLP.
-- **Li, X.L. & Liang, P. (2021)**. Prefix-Tuning: Optimizing Continuous Prompts for Generation. ACL.
-- **Pan, S.J. & Yang, Q. (2010)**. A Survey on Transfer Learning. IEEE TKDE, 22(10).
+Referências principais relacionadas aos conceitos da aula:
 
-## 🎥 Vídeos Relacionados
+1. **Houlsby, N. et al.** (2019). Parameter-Efficient Transfer Learning for NLP. *ICML 2019.*
+2. **Hu, E. et al.** (2021). LoRA: Low-Rank Adaptation of Large Language Models. *arXiv:2106.09685.*
+3. **Dettmers, T. et al.** (2023). QLoRA: Efficient Finetuning of Quantized LLMs. *NeurIPS 2023.*
+4. **Li, X. L. & Liang, P.** (2021). Prefix-Tuning: Optimizing Continuous Prompts for Generation. *ACL 2021.*
+5. **Lester, B. et al.** (2021). The Power of Scale for Parameter-Efficient Prompt Tuning. *EMNLP 2021.*
 
-- **Vídeo 1**: Introdução ao Transfer Learning e motivação para PEFT
-- **Vídeo 2**: Decomposição de baixo rank e visualização do espaço de parâmetros
-- **Vídeo 3**: Pipeline completo de fine-tuning QLoRA com análise de memória e performance
-- **Vídeo 4**: Validação numérica e troubleshooting de exportação ONNX
+---
 
 ## 🔗 Links Úteis
 
-- [Hugging Face PEFT](https://github.com/huggingface/peft) — Biblioteca oficial de PEFT
-- [ONNX Runtime](https://onnxruntime.ai/) — Runtime de inferência otimizada
-- [bitsandbytes](https://github.com/TimDettmers/bitsandbytes) — Quantização para PyTorch
-- [DeepLearning.AI – Efficient Fine-Tuning](https://www.deeplearning.ai/) — Curso recomendado
-- [AdapterHub](https://adapterhub.ml/) — Framework de adaptadores (Pfeiffer et al., 2020)
+- [Hugging Face PEFT](https://huggingface.co/docs/peft/)
+- [LoRA Paper](https://arxiv.org/abs/2106.09685)
+- [QLoRA Paper](https://arxiv.org/abs/2305.14314)
+- [bitsandbytes (quantização 4 bits)](https://github.com/TimDettmers/bitsandbytes)
+- [Hugging Face Transformers](https://huggingface.co/docs/transformers/)
+
+---
+
+*Material elaborado para a disciplina de Engenharia de Machine Learning — FIAP PosTech.*

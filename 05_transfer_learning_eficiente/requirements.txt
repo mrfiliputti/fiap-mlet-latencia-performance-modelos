@@ -1,40 +1,14 @@
-# =============================================================================
-# Aula 5 — Transfer Learning Eficiente e Adaptação de Modelos
-# =============================================================================
-# Instalar com: pip install -r requirements.txt
+# ============================================================
+# Aula 05 — Transfer Learning Eficiente: PEFT, LoRA e QLoRA
+# Dependências (versão simplificada — notebook único)
+# ============================================================
 
-# --- Core ---
+# Núcleo científico
 numpy>=1.24.0
 pandas>=2.0.0
-scikit-learn>=1.3.0
 
-# --- Deep Learning ---
-torch>=2.0.0
-transformers>=4.35.0
-accelerate>=0.24.0
-
-# --- PEFT / LoRA / QLoRA ---
-peft>=0.7.0
-bitsandbytes>=0.41.0
-
-# --- ONNX ---
-onnx>=1.14.0
-onnxruntime>=1.16.0
-
-# --- Visualização ---
+# Visualização
 matplotlib>=3.7.0
-seaborn>=0.12.0
 
-# --- Datasets ---
-datasets>=2.14.0
-
-# --- Notebooks ---
+# Notebook
 jupyter>=1.0.0
-ipywidgets>=8.0.0
-
-# --- Testes ---
-pytest>=7.4.0
-
-# --- Utilidades ---
-tqdm>=4.66.0
-psutil>=5.9.0
