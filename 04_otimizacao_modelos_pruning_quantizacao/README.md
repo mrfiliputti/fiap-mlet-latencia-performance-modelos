@@ -1,8 +1,6 @@
-# Aula 4 — Otimização de Modelos: Pruning e Quantização
+# Aula 04 — Otimização de Modelos: Pruning e Quantização
 
-Pipeline completo de compressão de redes neurais com técnicas de **pruning**,
-**quantização INT8** e **knowledge distillation**, aplicadas a um modelo de
-classificação de imagens (CIFAR-10) construído em PyTorch.
+> Disciplina: Engenharia de Machine Learning — FIAP PosTech
 
 ---
 
@@ -10,56 +8,75 @@ classificação de imagens (CIFAR-10) construído em PyTorch.
 
 Ao final desta aula o aluno será capaz de:
 
-1. Compreender a **Hipótese da Lottery Ticket** (Frankle & Carlin, 2019) e
-   por que redes neurais podem ser comprimidas sem perda significativa.
-2. Aplicar **pruning baseado em magnitude** (Han et al., 2015) — tanto
-   não-estruturado quanto estruturado — a camadas lineares e convolucionais.
-3. Implementar **quantização dinâmica e estática INT8** usando
-   `torch.quantization`, incluindo calibração e Quantization-Aware Training.
-4. Construir uma função de perda de **Knowledge Distillation** (Hinton et al.,
-   2015) com soft labels e temperatura ajustável.
-5. Montar um **pipeline integrado de compressão** (pruning → fine-tune →
-   quantização) e avaliar trade-offs de acurácia, latência e memória.
+1. **Compreender** o problema de latência na inspeção visual de defeitos em uma linha de produção industrial.
+2. **Explicar** de forma simples o que são **pruning** (estruturado/não-estruturado) e **quantização** (PTQ/QAT).
+3. **Medir** na prática a latência média e calcular o throughput (itens/segundo) de um pipeline de inferência.
+4. **Comparar** um modelo pesado (ResNet-50 FP32) com uma versão otimizada (quantização PTQ INT8).
+5. **Avaliar** se o sistema atende à meta de produção de **30 itens por segundo**.
+6. **Reconhecer** técnicas reais de otimização (pruning, quantização, fine-tuning, hardware) e seus trade-offs.
+
+---
+
+## 🧩 Caso de Uso
+
+Uma **fábrica** usa deep learning para **detectar defeitos** nos produtos ao longo da **linha de produção**.
+Uma câmera fotografa cada item na esteira e um modelo de IA decide se a peça está **OK** ou **defeituosa**.
+
+```
+🏭 Esteira → [foto do item] → [modelo de IA] → [decisão: defeito?] → ✅ / ❌ descarte
+```
+
+Hoje o sistema usa **ResNet-50** (alta acurácia), mas com **~200 ms por imagem** (~5 itens/s) — insuficiente
+para uma esteira que movimenta **~30 itens/s**. Além disso, o **hardware industrial é limitado** e precisa de
+uma solução mais **leve**. A meta é atingir **~30 itens/s** (≈ 33 ms por imagem), reduzindo latência, tamanho
+do modelo e custo computacional, mantendo acurácia suficiente para separar peças boas de defeituosas. É nesse
+desafio que a aula foca.
 
 ---
 
 ## 📖 Teoria-Chave
 
-### Lottery Ticket Hypothesis
+### Latência e Throughput
 
-> Uma rede neural densa, inicializada aleatoriamente, contém uma sub-rede
-> esparsa que, quando treinada isoladamente desde a mesma inicialização, pode
-> atingir acurácia comparável à rede completa (Frankle & Carlin, 2019).
+Para um pipeline simples que processa uma imagem de cada vez:
 
-### Critérios de Importância para Pruning
+$$\text{throughput} \approx \frac{1000}{\text{latência por imagem (ms)}}$$
 
-| Critério | Fórmula / Ideia |
-|----------|-----------------|
-| Magnitude-based | Remove pesos com \|w\| < τ |
-| Gradient-based | Remove pesos com \|∂L/∂w\| pequeno |
-| Taylor 1ª ordem | ΔL(wᵢ) ≈ \|∂L/∂wᵢ · wᵢ\| (Molchanov et al., 2017) |
+| Latência por imagem | Throughput aproximado | Meta (30 itens/s)? |
+|---|---|---|
+| 200 ms | ~5 itens/s  | ❌ Não |
+| 100 ms | ~10 itens/s | ❌ Não |
+| 33 ms  | ~30 itens/s | ✅ Sim |
+| 16 ms  | ~60 itens/s | ✅ Sim |
 
-### Quantização Uniforme
+Modelos grandes (mais parâmetros e operações) tendem a ter **maior latência**. Pruning reduz o **número** de
+operações; quantização reduz o **custo** de cada operação.
 
-$$q = \text{round}\left(\frac{x - z}{s}\right), \quad \hat{x} = s \cdot q + z$$
+### Técnicas de otimização (referência)
 
-### Knowledge Distillation
-
-$$\mathcal{L} = \alpha \cdot T^2 \cdot D_{KL}(p^T_{student} \| p^T_{teacher}) + (1 - \alpha) \cdot \mathcal{L}_{CE}(p_{student}, y)$$
+| Técnica | Ideia central | Ganho |
+|---|---|---|
+| **Pruning estruturado** | remove canais/filtros inteiros | modelo menor e mais rápido |
+| **Pruning não-estruturado** | zera pesos individuais irrelevantes | alta compressão (esparsidade) |
+| **Quantização PTQ** | FP32 → INT8 sem re-treino | até 4x menor, mais rápido |
+| **Quantização QAT** | simula INT8 durante o treino | recupera acurácia perdida |
+| **Fine-tuning após poda** | re-treina após remover pesos | recupera acurácia perdida |
+| **Aceleração por hardware** | NPU / GPU / runtimes otimizados | mais operações por segundo |
 
 ---
 
 ## 🛠️ Tecnologias Utilizadas
 
-| Biblioteca | Versão mínima | Uso |
-|------------|---------------|-----|
-| PyTorch | 2.0.0 | Modelos, pruning, quantização |
-| torchvision | 0.15.0 | Dataset CIFAR-10, transforms |
-| NumPy | 1.24.0 | Operações numéricas |
-| Pandas | 2.0.0 | Tabulação de métricas |
-| Matplotlib | 3.7.0 | Gráficos |
-| Seaborn | 0.12.0 | Visualizações estatísticas |
-| pytest | 7.4.0 | Testes unitários |
+| Biblioteca | Versão | Uso |
+|-----------|--------|-----|
+| Python     | ≥ 3.10 | Linguagem base |
+| NumPy      | ≥ 1.24 | Geração de ruído e estatísticas |
+| Pandas     | ≥ 2.0  | Tabela comparativa |
+| Matplotlib | ≥ 3.7  | Visualizações |
+| Jupyter    | ≥ 1.0  | Notebook interativo |
+
+> O notebook desta aula é **leve e autocontido**: usa apenas `numpy`, `pandas` e `matplotlib`, **sem GPU**,
+> internet ou datasets externos.
 
 ---
 
@@ -67,32 +84,12 @@ $$\mathcal{L} = \alpha \cdot T^2 \cdot D_{KL}(p^T_{student} \| p^T_{teacher}) + 
 
 ```
 04_otimizacao_modelos_pruning_quantizacao/
-├── README.md                   ← este arquivo
-├── requirements.txt            ← dependências da aula
+├── README.md                                 # ← Você está aqui
+├── requirements.txt                          # Dependências da aula
 ├── notebooks/
-│   ├── 01_exploracao.ipynb     ← EDA do modelo base + análise de pesos
-│   ├── 02_treinamento.ipynb    ← pruning, quantização, distillation
-│   └── 03_avaliacao.ipynb      ← benchmarks de latência/memória/acurácia
-├── src/
-│   ├── __init__.py
-│   ├── data_preprocessing.py   ← carregamento CIFAR-10 e transforms
-│   ├── model.py                ← CNN base + variantes comprimidas
-│   ├── training.py             ← treinamento, fine-tune, distillation
-│   ├── evaluation.py           ← métricas de acurácia, latência, memória
-│   └── utils.py                ← serialização, logging, helpers
-├── data/
-│   ├── raw/                    ← (CIFAR-10 auto-download via torchvision)
-│   ├── processed/
-│   └── README.md
-├── tests/
-│   ├── __init__.py
-│   ├── test_preprocessing.py
-│   ├── test_model.py
-│   └── test_evaluation.py
+│   └── 00_inspecao_defeitos_latencia.ipynb   # Notebook único: pruning, quantização e latência
 └── outputs/
-    ├── models/
-    ├── figures/
-    └── logs/
+    └── figures/                              # (opcional) figuras exportadas
 ```
 
 ---
@@ -104,72 +101,44 @@ $$\mathcal{L} = \alpha \cdot T^2 \cdot D_{KL}(p^T_{student} \| p^T_{teacher}) + 
 ```bash
 cd 04_otimizacao_modelos_pruning_quantizacao
 pip install -r requirements.txt
+
+# ou, o mínimo para este notebook:
+pip install numpy pandas matplotlib jupyter
 ```
 
-### 2. Executar notebooks (ordem recomendada)
+### 2. Executar o notebook
 
 ```bash
-jupyter notebook notebooks/01_exploracao.ipynb
-jupyter notebook notebooks/02_treinamento.ipynb
-jupyter notebook notebooks/03_avaliacao.ipynb
+jupyter notebook notebooks/00_inspecao_defeitos_latencia.ipynb
 ```
 
-### 3. Executar via scripts
+O notebook é autocontido e executa de ponta a ponta, cobrindo:
 
-```bash
-# Treinar modelo base
-python -m src.training
-
-# Avaliar modelos comprimidos
-python -m src.evaluation
-```
+1. Contexto da inspeção visual de defeitos e a meta de 30 itens/s.
+2. Conceitos de pruning (estruturado/não-estruturado) e quantização (PTQ/QAT).
+3. Hands-on simulando dois cenários (ResNet-50 FP32 × versão quantizada PTQ INT8).
+4. Comparação dos resultados em tabela e gráfico (latência, throughput, tamanho).
+5. Discussão de técnicas reais de otimização e seus trade-offs.
+6. Conclusão sobre atender (ou não) ao requisito de produção.
 
 ---
 
 ## 📊 Datasets
 
-O dataset utilizado é o **CIFAR-10** (Krizhevsky, 2009), baixado
-automaticamente via `torchvision.datasets.CIFAR10`. Veja detalhes em
-[data/README.md](data/README.md).
+Esta versão simplificada **não depende de dataset externo**: os tempos de inferência são simulados
+sinteticamente dentro do próprio notebook, permitindo medir latência e throughput sem GPU.
 
 ---
 
-## 🧪 Testes
+## 📚 Referências
 
-```bash
-# Na raiz da aula:
-cd 04_otimizacao_modelos_pruning_quantizacao
-pytest tests/ -v
-```
+Referências principais relacionadas aos conceitos da aula:
 
----
-
-## 📚 Referências (código ↔ documento 04)
-
-- **Han, S. et al. (2015).** Learning both Weights and Connections for
-  Efficient Neural Networks. *NeurIPS*. → `src/model.py` (pruning)
-- **Frankle, J. & Carlin, M. (2019).** The Lottery Ticket Hypothesis.
-  *ICLR*. → Notebook 01 (análise de esparsidade)
-- **Hinton, G. et al. (2015).** Distilling the Knowledge in a Neural
-  Network. *NIPS Workshop*. → `src/training.py` (distillation loss)
-- **Jacob, B. et al. (2018).** Quantization and Training of Neural Networks
-  for Efficient Integer-Arithmetic-Only Inference. *CVPR*. →
-  `src/model.py` (quantização)
-- **Molchanov, P. et al. (2017).** Pruning CNNs for Resource Efficient
-  Inference. *ICLR*. → `src/model.py` (Taylor pruning)
-- **Blalock, D. et al. (2020).** What is the State of Neural Network
-  Pruning? *MLSys*. → Notebook 03 (comparações)
-
----
-
-## 🎥 Vídeos Relacionados
-
-| Vídeo | Conteúdo |
-|-------|----------|
-| Vídeo 1 | Introdução ao pipeline de compressão |
-| Vídeo 2 | Identificação de winning tickets e esparsidade iterativa |
-| Vídeo 3 | Knowledge Distillation aplicada a BERT / classificadores |
-| Vídeo 4 | Pipeline combinado com deployment |
+1. **Han, S. et al.** (2015). Learning both Weights and Connections for Efficient Neural Networks. *NeurIPS 2015.*
+2. **Frankle, J. & Carbin, M.** (2019). The Lottery Ticket Hypothesis. *ICLR 2019.*
+3. **Jacob, B. et al.** (2018). Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference. *CVPR 2018.*
+4. **Molchanov, P. et al.** (2017). Pruning CNNs for Resource Efficient Inference. *ICLR 2017.*
+5. **Blalock, D. et al.** (2020). What is the State of Neural Network Pruning? *MLSys 2020.*
 
 ---
 
@@ -177,9 +146,10 @@ pytest tests/ -v
 
 - [PyTorch Pruning Tutorial](https://pytorch.org/tutorials/intermediate/pruning_tutorial.html)
 - [PyTorch Quantization Docs](https://pytorch.org/docs/stable/quantization.html)
+- [ONNX Runtime](https://onnxruntime.ai/)
 - [Intel Neural Compressor](https://github.com/intel/neural-compressor)
 - [Hugging Face Optimum](https://huggingface.co/docs/optimum/)
 
 ---
 
-*Material elaborado para a disciplina de Engenharia de Machine Learning — FIAP Pós-Tech (2026)*
+*Material elaborado para a disciplina de Engenharia de Machine Learning — FIAP PosTech.*
