@@ -6,16 +6,32 @@
 
 ## 🎯 Objetivos de Aprendizagem
 
+Esta é uma versão **simplificada e consolidada em um único notebook**, guiada por um caso de uso prático: um **assistente virtual de compras por voz** que precisa responder em tempo real.
+
 Ao final desta aula o aluno será capaz de:
 
-1. **Compreender** a complexidade O(n²) do mecanismo de self-attention e identificar seus gargalos computacionais e de memória.
-2. **Implementar** o mecanismo de self-attention vanilla (scaled dot-product) e compará-lo com variantes eficientes.
-3. **Explicar** como Flash Attention substitui o paradigma de redução de FLOPs por IO-awareness, explorando a hierarquia de memória das GPUs.
-4. **Classificar** abordagens de atenção eficiente (Sparse, Linformer, Performer, Local) usando a taxonomia de Tay et al. (2022).
-5. **Implementar** KV-Cache para geração autoregressiva e analisar seus trade-offs de memória vs. computação.
-6. **Extrair** representações de áudio (STFT, espectrogramas Mel, MFCCs) e compreender os parâmetros relevantes para modelos como Whisper.
-7. **Avaliar** estratégias de batching (padding, packing, sorted batching) e seu impacto no throughput.
-8. **Projetar** pipelines de transcrição de áudio otimizados com quantização e VAD.
+1. **Compreender** o pipeline de um assistente virtual de voz: ASR → NLP/LLM → busca → TTS.
+2. **Explicar** de forma simples por que o mecanismo de self-attention tem complexidade **O(n²)**.
+3. **Implementar** uma self-attention mínima (scaled dot-product) em NumPy.
+4. **Medir** na prática como a latência da atenção cresce conforme o tamanho da pergunta.
+5. **Interpretar** o impacto do gargalo O(n²) na experiência de tempo real.
+6. **Reconhecer** alternativas eficientes (Sparse, Linear e Flash Attention) como caminhos para reduzir esse custo.
+
+---
+
+## � Caso de Uso
+
+Um **assistente virtual de compras por voz**. O usuário pergunta em voz alta:
+
+> 🗣️ *"Quais tênis de corrida leves custam menos de 500 reais?"*
+
+Para responder **em poucos segundos**, o sistema executa o pipeline:
+
+```
+🎤 Voz → [ASR] → texto → [NLP/LLM] → intenção → [Busca] → resposta → [TTS] → 🔊 Fala
+```
+
+O maior gargalo costuma estar na etapa de **NLP/LLM**, por causa do mecanismo de atenção. É nele que a aula foca.
 
 ---
 
@@ -27,27 +43,15 @@ $$
 \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
 $$
 
-A matriz de atenção $QK^T$ possui dimensões $n \times n$, implicando complexidade de tempo $O(n^2 \cdot d)$ e **memória** $O(n^2)$. (Vaswani et al., 2017)
+A matriz de atenção $QK^T$ possui dimensões $n \times n$: cada token é comparado com **todos** os outros. Isso implica complexidade de tempo $O(n^2 \cdot d)$ e **memória** $O(n^2)$. Na prática, **dobrar** o tamanho da pergunta **quadruplica** o trabalho. (Vaswani et al., 2017)
 
-### Flash Attention — IO-Awareness
+### Alternativas eficientes
 
-Em vez de minimizar FLOPs, Flash Attention minimiza acessos à HBM usando **tiling** e **recomputação**:
-
-$$
-O_i = \sum_j \frac{\exp(Q_i K_j^T - m_i)}{\sum_{j'} \exp(Q_i K_{j'}^T - m_i)} V_j
-$$
-
-Reduz memória de $O(n^2)$ para $O(n)$ com speedups de 2-4× em inferência. (Dao et al., 2022)
-
-### Processamento de Áudio — Espectrograma Mel
-
-Escala Mel perceptualmente motivada:
-
-$$
-m = 2595 \cdot \log_{10}\left(1 + \frac{f}{700}\right)
-$$
-
-Whisper utiliza 80 filtros Mel, `n_fft=400` (25 ms @ 16 kHz), `hop_length=160` (10 ms). (Radford et al., 2023)
+| Técnica | Ideia central | Ganho |
+|---|---|---|
+| **Sparse Attention** | cada token olha só para alguns tokens, não todos | menos comparações |
+| **Linear Attention** | reorganiza a matemática para custo O(n) | escala linear |
+| **Flash Attention** | otimiza o uso da memória da GPU (IO-awareness) | 2–4× mais rápido |
 
 ---
 
@@ -56,16 +60,11 @@ Whisper utiliza 80 filtros Mel, `n_fft=400` (25 ms @ 16 kHz), `hop_length=160` (
 | Biblioteca        | Versão   | Uso                                  |
 |-------------------|----------|--------------------------------------|
 | Python            | ≥ 3.10   | Linguagem base                       |
-| NumPy             | ≥ 1.24   | Álgebra linear, geração de dados     |
-| Pandas            | ≥ 2.0    | Manipulação tabular                  |
-| PyTorch           | ≥ 2.0    | Tensores, autograd, modelos          |
-| Librosa           | ≥ 0.10   | Processamento de áudio               |
-| SoundFile         | ≥ 0.12   | Leitura/escrita de arquivos de áudio |
+| NumPy             | ≥ 1.24   | Álgebra linear, atenção em NumPy     |
 | Matplotlib        | ≥ 3.7    | Visualizações                        |
-| Seaborn           | ≥ 0.12   | Gráficos estatísticos                |
-| scikit-learn      | ≥ 1.3    | Métricas, utilidades                 |
-| pytest            | ≥ 7.4    | Testes unitários                     |
-| Jupyter           | ≥ 1.0    | Notebooks interativos                |
+| Jupyter           | ≥ 1.0    | Notebook interativo                  |
+
+> O notebook desta aula foi mantido **leve e executável**, usando apenas `numpy` e `matplotlib`. As demais bibliotecas em `requirements.txt` permanecem disponíveis para exploração dos módulos em `src/`.
 
 ---
 
@@ -76,9 +75,7 @@ Whisper utiliza 80 filtros Mel, `n_fft=400` (25 ms @ 16 kHz), `hop_length=160` (
 ├── README.md                        # ← Você está aqui
 ├── requirements.txt                 # Dependências da aula
 ├── notebooks/
-│   ├── 01_exploracao.ipynb          # EDA: atenção, sinais de áudio
-│   ├── 02_treinamento.ipynb         # Benchmark de mecanismos de atenção
-│   └── 03_avaliacao.ipynb           # Métricas de latência e memória
+│   └── 00_assistente_virtual_latencia.ipynb  # Notebook único: latência da atenção O(n²)
 ├── src/
 │   ├── __init__.py
 │   ├── data_preprocessing.py        # Tokenização, padding, Mel features
@@ -113,43 +110,29 @@ cd 02_desafios_performance_nlp_audio
 pip install -r requirements.txt
 ```
 
-### 2. Gerar dataset (se necessário)
+O notebook usa apenas `numpy` e `matplotlib`; para rodá-lo você também precisa do `jupyter`.
+
+### 2. Executar o notebook
 
 ```bash
-python -c "from src.data_preprocessing import DataPreprocessor; DataPreprocessor().generate_dataset()"
+jupyter notebook notebooks/00_assistente_virtual_latencia.ipynb
 ```
 
-### 3. Executar notebooks (ordem recomendada)
+O notebook é autocontido e executa de ponta a ponta, cobrindo:
 
-```bash
-jupyter notebook notebooks/01_exploracao.ipynb
-jupyter notebook notebooks/02_treinamento.ipynb
-jupyter notebook notebooks/03_avaliacao.ipynb
-```
-
-### 4. Executar via scripts Python
-
-```python
-from src.data_preprocessing import DataPreprocessor
-from src.model import VanillaAttention, LinearAttention
-from src.training import benchmark_attention_mechanisms
-from src.evaluation import PerformanceEvaluator
-
-# Pipeline completo
-preprocessor = DataPreprocessor()
-data = preprocessor.load_data("data/raw/dataset.csv")
-results = benchmark_attention_mechanisms(seq_lengths=[64, 128, 256, 512])
-evaluator = PerformanceEvaluator()
-evaluator.plot_scaling_comparison(results)
-```
+1. Contexto do assistente virtual de voz.
+2. Explicação simples da complexidade O(n²) da atenção.
+3. Implementação de uma self-attention mínima em NumPy.
+4. Hands-on medindo a latência conforme a pergunta cresce.
+5. Interpretação dos resultados e alternativas eficientes.
 
 ---
 
 ## 📊 Datasets
 
-Dataset sintético com sequências de texto tokenizadas e sinais de áudio simulados, projetado para demonstrar os conceitos de complexidade de atenção e processamento de áudio discutidos na aula.
+Esta versão simplificada **não depende de dataset externo**: os tensores usados na atenção são gerados sinteticamente com NumPy dentro do próprio notebook.
 
-→ Detalhes completos em [`data/README.md`](data/README.md)
+Os módulos em `src/` e o dataset documentado em [`data/README.md`](data/README.md) permanecem disponíveis para quem quiser aprofundar.
 
 ---
 
@@ -187,10 +170,9 @@ Referências principais utilizadas no código (extraídas do material teórico d
 
 ## 🎥 Vídeos Relacionados
 
-- **Vídeo 1** — Configuração do ambiente e overview da aula
-- **Vídeo 2** — Pipeline de execução de Transformers e identificação de gargalos; Visualização interativa das transformações de áudio
-- **Vídeo 3** — Pipeline completo de transcrição de áudio com Whisper otimizado
-- **Vídeo 4** — Benchmark comparativo: Flash Attention vs. Vanilla Attention
+- **Vídeo 1** — Configuração do ambiente e overview do caso de uso (assistente virtual de voz)
+- **Vídeo 2** — Complexidade O(n²) da atenção e hands-on medindo a latência em NumPy
+- **Vídeo 3** — Alternativas eficientes: Sparse, Linear e Flash Attention
 
 ---
 
