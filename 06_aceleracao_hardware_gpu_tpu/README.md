@@ -1,66 +1,77 @@
-# Aula 06: Aceleração com Hardware: GPU, TPU e Aceleradores
+# Aula 06 — Aceleração por Hardware: GPU, TPU e ASICs
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch 2.x](https://img.shields.io/badge/pytorch-2.x-ee4c2c.svg)](https://pytorch.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../LICENSE)
+> Disciplina: Engenharia de Machine Learning — FIAP PosTech
 
 ---
 
 ## 🎯 Objetivos de Aprendizagem
 
-Ao concluir esta aula, você será capaz de:
+Ao final desta aula o aluno será capaz de:
 
-1. **Compreender a arquitetura de GPUs NVIDIA** — organização em Streaming Multiprocessors, modelo SIMT e hierarquia de memória (Nickolls & Dally, 2010)
-2. **Aplicar o Modelo Roofline** para classificar operações como *compute-bound* ou *memory-bound* (Williams, Waterman & Patterson, 2009)
-3. **Implementar Mixed Precision Training** com AMP (Automatic Mixed Precision) usando FP16/BF16 e loss scaling dinâmico (Micikevicius et al., 2018)
-4. **Utilizar Gradient Checkpointing** para reduzir consumo de memória GPU em até 60% (Chen et al., 2016)
-5. **Realizar profiling detalhado** com PyTorch Profiler e interpretar métricas de GPU (SM efficiency, memory throughput, occupancy)
-6. **Comparar aceleradores** — GPU, TPU, NPU e AWS Inferentia — e selecionar hardware adequado para diferentes workloads
+1. **Compreender** por que a CPU vira gargalo em cargas pesadas de machine learning.
+2. **Explicar** de forma simples por que **GPUs superam CPUs** em ML e o que são **TPUs/ASICs**.
+3. **Medir** na prática a latência média e o throughput (FPS) de um pipeline de percepção.
+4. **Comparar** o processamento em CPU com o processamento em GPU.
+5. **Avaliar** se o sistema atende à meta de segurança de **< 50 ms por frame** (~30 ms ideal).
+6. **Reconhecer** tecnologias reais de aceleração (CUDA, cuDNN, TensorRT, XLA, multi-GPU) e seus trade-offs.
+
+---
+
+## 🧩 Caso de Uso
+
+Uma **fabricante de carros autônomos** desenvolve um sistema de **direção automática**. O veículo tem múltiplas
+câmeras de alta resolução, **LIDAR** e **radares**, gerando dados não estruturados em tempo real.
+
+```
+📷 Câmeras + 🛰️ LIDAR → [percepção / fusão de sensores] → [decisão: virar? frear? desviar?] → 🚗
+```
+
+No protótipo inicial, só **CPUs** processavam a visão computacional: **~200 ms por frame** (~5 FPS), muito acima
+da meta de **< 50 ms** (~33 ms para 30 FPS). Ao adicionar sensores, formavam-se **filas de imagens**. A solução
+foi integrar uma **GPU de alto desempenho**, que derrubou a latência para **~30 ms** (redução de quase 7x),
+elevou o throughput para **>30 FPS por sensor** e tornou o sistema **responsivo e confiável**. É nesse desafio
+que a aula foca.
 
 ---
 
 ## 📖 Teoria-Chave
 
-### Modelo Roofline
+### Por que a CPU vira gargalo?
 
-O Modelo Roofline (Williams et al., 2009) caracteriza performance de workloads via **intensidade aritmética**:
+A CPU tem poucos núcleos potentes, ótimos para tarefas **sequenciais**. Modelos de ML fazem **bilhões de
+multiplicações de matrizes** que poderiam rodar **em paralelo** — algo em que a **GPU** (milhares de núcleos)
+é imbatível.
 
-$$
-\text{Performance}_{\text{atingível}} = \min\left(\text{Peak}_{\text{compute}},\ \text{BW}_{\text{mem}} \times \text{AI}\right)
-$$
+| Cenário | Hardware | Latência por frame | FPS aproximado | Atende < 50 ms? |
+|---|---|---|---|---|
+| Protótipo | CPU tradicional | ~200 ms | ~5 FPS  | ❌ Não |
+| Solução  | GPU de alto desempenho | ~30 ms | ~30 FPS | ✅ Sim |
 
-| Operação | Intensidade Aritmética | Classificação |
+### Tecnologias de aceleração (referência)
+
+| Tecnologia | Ideia central | Ganho |
 |---|---|---|
-| Matmul (matrizes grandes) | ~100 FLOP/byte | Compute-bound |
-| Convolução 3×3 | ~30 FLOP/byte | Balanceado |
-| BatchNorm / Softmax | ~1-3 FLOP/byte | Memory-bound |
-
-### Mixed Precision Training
-
-Utiliza FP16/BF16 no forward/backward pass e FP32 para acumulação de gradientes, com **loss scaling** para evitar underflow:
-
-$$
-\text{Loss}_{\text{scaled}} = S \times \text{Loss}_{\text{original}} \qquad \nabla W_{\text{final}} = \frac{\nabla W_{\text{scaled}}}{S}
-$$
-
-### Gradient Checkpointing
-
-Reduz memória de O(n) para O(√n) ao recomputar ativações intermediárias durante o backward pass, ao custo de ~33% de computação adicional (Chen et al., 2016).
+| **GPU** | paralelismo massivo (milhares de núcleos) | processa muitos frames/sensores juntos |
+| **TPU** | ASIC do Google para tensores/matrizes | throughput alto, eficiência energética |
+| **ASICs** | chip dedicado a IA (Ascend, Habana, Cerebras) | máximo desempenho por watt |
+| **CUDA / cuDNN / TensorRT** | programar e otimizar GPUs NVIDIA | menor latência de inferência |
+| **XLA** | compilador de grafos (TF/JAX) | otimiza execução, usado em TPUs |
+| **Multi-GPU / NVLink** | várias GPUs em paralelo | escala para mais sensores e modelos |
 
 ---
 
 ## 🛠️ Tecnologias Utilizadas
 
-| Biblioteca | Versão | Propósito |
-|---|---|---|
-| PyTorch | ≥ 2.0.0 | Framework de deep learning com AMP |
-| torchvision | ≥ 0.15.0 | Datasets e transforms |
-| NumPy | ≥ 1.24.0 | Computação numérica |
-| Pandas | ≥ 2.0.0 | Manipulação de dados tabulares |
-| Matplotlib | ≥ 3.7.0 | Visualizações |
-| Seaborn | ≥ 0.12.0 | Visualizações estatísticas |
-| pytest | ≥ 7.4.0 | Testes unitários |
-| psutil | ≥ 5.9.0 | Monitoramento de recursos |
+| Biblioteca | Versão | Uso |
+|-----------|--------|-----|
+| Python     | ≥ 3.10 | Linguagem base |
+| NumPy      | ≥ 1.24 | Geração de ruído e estatísticas |
+| Pandas     | ≥ 2.0  | Tabela comparativa |
+| Matplotlib | ≥ 3.7  | Visualizações |
+| Jupyter    | ≥ 1.0  | Notebook interativo |
+
+> O notebook desta aula é **leve e autocontido**: usa apenas `numpy`, `pandas` e `matplotlib`, **sem GPU real**,
+> internet ou datasets externos.
 
 ---
 
@@ -68,133 +79,72 @@ Reduz memória de O(n) para O(√n) ao recomputar ativações intermediárias du
 
 ```
 06_aceleracao_hardware_gpu_tpu/
-├── README.md                        # Este arquivo
-├── requirements.txt                 # Dependências da aula
+├── README.md                          # ← Você está aqui
+├── requirements.txt                   # Dependências da aula
 ├── notebooks/
-│   ├── 01_exploracao.ipynb          # Exploração: hardware, roofline, benchmarks
-│   ├── 02_treinamento.ipynb         # Treinamento: mixed precision, checkpointing
-│   └── 03_avaliacao.ipynb           # Avaliação: profiling, métricas, comparações
-├── src/
-│   ├── __init__.py                  # Inicialização do pacote
-│   ├── data_preprocessing.py        # Pré-processamento e geração de dados
-│   ├── model.py                     # Vision Transformer com suporte a AMP
-│   ├── training.py                  # Treinamento com mixed precision
-│   ├── evaluation.py                # Métricas, profiling e roofline
-│   └── utils.py                     # Utilitários: device, save/load, config
-├── data/
-│   ├── raw/                         # Dados brutos / gerados
-│   │   └── dataset.csv              # Dataset sintético de classificação
-│   ├── processed/                   # Dados processados
-│   └── README.md                    # Documentação do dataset
-├── tests/
-│   ├── __init__.py
-│   ├── test_preprocessing.py        # Testes de pré-processamento
-│   ├── test_model.py                # Testes do modelo ViT
-│   └── test_evaluation.py           # Testes de avaliação e métricas
+│   └── 00_veiculo_autonomo_gpu.ipynb  # Notebook único: CPU vs GPU, latência e throughput
 └── outputs/
-    ├── models/                      # Modelos salvos (.pt)
-    ├── figures/                     # Gráficos gerados
-    └── logs/                        # Logs de profiling
+    └── figures/                       # (opcional) figuras exportadas
 ```
 
 ---
 
 ## 🚀 Como Executar
 
-### 1. Instalação de Dependências
+### 1. Instalar dependências
 
 ```bash
 cd 06_aceleracao_hardware_gpu_tpu
 pip install -r requirements.txt
+
+# ou, o mínimo para este notebook:
+pip install numpy pandas matplotlib jupyter
 ```
 
-> **Nota:** Para aceleração GPU, instale PyTorch com suporte CUDA:
-> ```bash
-> pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-> ```
-
-### 2. Gerar Dataset Sintético
+### 2. Executar o notebook
 
 ```bash
-python -c "from src.data_preprocessing import DataPreprocessor; DataPreprocessor().generate_dataset()"
+jupyter notebook notebooks/00_veiculo_autonomo_gpu.ipynb
 ```
 
-### 3. Executar Notebooks (sequencialmente)
+O notebook é autocontido e executa de ponta a ponta, cobrindo:
 
-```
-notebooks/01_exploracao.ipynb   → Exploração de hardware e conceitos
-notebooks/02_treinamento.ipynb  → Treinamento com mixed precision
-notebooks/03_avaliacao.ipynb    → Profiling e avaliação de performance
-```
-
-### 4. Executar via Scripts Python
-
-```bash
-# Treinamento completo
-python -m src.training
-
-# Avaliação
-python -m src.evaluation
-```
+1. Contexto do veículo autônomo e a meta de < 50 ms por frame.
+2. Conceitos de CPU, GPU, TPU, ASICs e o papel de CUDA/cuDNN/TensorRT/XLA.
+3. Hands-on simulando dois cenários (CPU × GPU).
+4. Comparação dos resultados em tabela e gráfico (latência e FPS).
+5. Discussão de tecnologias reais de aceleração e seus trade-offs.
+6. Conclusão sobre atender (ou não) ao requisito de segurança em tempo real.
 
 ---
 
 ## 📊 Datasets
 
-Dataset sintético de classificação de imagens (formato tabular) para demonstração de técnicas de aceleração por hardware. Consulte [data/README.md](data/README.md) para detalhes completos.
-
-- **Instâncias:** 10.000
-- **Features:** 768 (patches de imagem 32×32 flattened)
-- **Classes:** 10
-- **Formato:** CSV
-
----
-
-## 🧪 Testes
-
-```bash
-# Executar todos os testes
-pytest tests/ -v
-
-# Executar testes específicos
-pytest tests/test_preprocessing.py -v
-pytest tests/test_model.py -v
-pytest tests/test_evaluation.py -v
-
-# Com cobertura
-pytest tests/ -v --tb=short
-```
+Esta versão simplificada **não depende de dataset externo**: os tempos de processamento são simulados
+sinteticamente dentro do próprio notebook, permitindo medir latência e throughput sem GPU.
 
 ---
 
 ## 📚 Referências
 
-Referências principais implementadas no código desta aula:
+Referências principais relacionadas aos conceitos da aula:
 
-- **Micikevicius, P. et al.** (2018). Mixed Precision Training. *ICLR*. DOI: 10.48550/arXiv.1710.03740
-- **Williams, S., Waterman, A., Patterson, D.** (2009). Roofline: An Insightful Visual Performance Model. *Communications of the ACM*, 52(4), 65-76.
-- **Chen, T. et al.** (2016). Training Deep Nets with Sublinear Memory Cost. *arXiv*. DOI: 10.48550/arXiv.1604.06174
-- **Dao, T.** (2023). FlashAttention-2: Faster Attention with Better Parallelism. *NeurIPS*. DOI: 10.48550/arXiv.2307.08691
-- **Nickolls, J., Dally, W.J.** (2010). The GPU Computing Era. *IEEE Micro*, 30(2), 56-69.
-- **Jouppi, N.P. et al.** (2017). In-Datacenter Performance Analysis of a Tensor Processing Unit. *ISCA*. DOI: 10.1145/3079856.3080246
-- **Noune, B. et al.** (2022). FP8 Formats for Deep Learning. *arXiv*. DOI: 10.48550/arXiv.2209.05433
-
----
-
-## 🎥 Vídeos Relacionados
-
-- **Vídeo 1:** Fundamentos de arquitetura GPU e modelo SIMT
-- **Vídeo 2:** Hierarquia de memória GPU e benchmarks de aceleradores
-- **Vídeo 3:** Implementação prática de Mixed Precision Training e profiling
-- **Vídeo 4:** Gradient Checkpointing e otimização de memória
+1. **Jouppi, N. P. et al.** (2017). In-Datacenter Performance Analysis of a Tensor Processing Unit. *ISCA 2017.*
+2. **NVIDIA** (2020). NVIDIA A100 Tensor Core GPU Architecture. *Whitepaper.*
+3. **Sze, V. et al.** (2017). Efficient Processing of Deep Neural Networks: A Tutorial and Survey. *Proceedings of the IEEE.*
+4. **Chetlur, S. et al.** (2014). cuDNN: Efficient Primitives for Deep Learning. *arXiv:1410.0759.*
+5. **Reddi, V. J. et al.** (2020). MLPerf Inference Benchmark. *ISCA 2020.*
 
 ---
 
 ## 🔗 Links Úteis
 
-- [PyTorch Automatic Mixed Precision](https://pytorch.org/docs/stable/amp.html)
-- [PyTorch Profiler](https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
-- [NVIDIA Ampere Architecture Whitepaper](https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/nvidia-ampere-architecture-whitepaper.pdf)
-- [NVIDIA Nsight Systems](https://developer.nvidia.com/nsight-systems)
-- [Google Cloud TPU Documentation](https://cloud.google.com/tpu/docs)
-- [Programming Massively Parallel Processors (Kirk & Hwu, 2022)](https://www.elsevier.com/books/programming-massively-parallel-processors/kirk/978-0-323-91231-0)
+- [NVIDIA CUDA](https://developer.nvidia.com/cuda-zone)
+- [NVIDIA TensorRT](https://developer.nvidia.com/tensorrt)
+- [Google Cloud TPU](https://cloud.google.com/tpu)
+- [XLA (TensorFlow)](https://www.tensorflow.org/xla)
+- [ONNX Runtime](https://onnxruntime.ai/)
+
+---
+
+*Material elaborado para a disciplina de Engenharia de Machine Learning — FIAP PosTech.*
