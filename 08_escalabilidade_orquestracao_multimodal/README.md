@@ -1,53 +1,79 @@
-# Aula 08 — Escalabilidade e Orquestração Multimodal em Produção
+# Aula 08 — Escalabilidade e Orquestração Multimodal
+
+> Disciplina: Engenharia de Machine Learning — FIAP PosTech
+
+---
 
 ## 🎯 Objetivos de Aprendizagem
 
-Ao final desta aula, o aluno será capaz de:
+Ao final desta aula o aluno será capaz de:
 
-1. **Aplicar princípios de Site Reliability Engineering (SRE)** a sistemas de ML, definindo SLIs, SLOs e error budgets conforme formalizado por Beyer et al. (2016).
-2. **Comparar arquiteturas de serving** (microserviços vs. monolito) à luz do Teorema CAP (Brewer, 2000; Gilbert & Lynch, 2002).
-3. **Configurar orquestradores de ML serving** (KServe, Seldon Core, BentoML) sobre Kubernetes.
-4. **Implementar canary deployments** com validação estatística (teste-t, qui-quadrado) para promoção/rollback de modelos.
-5. **Instrumentar observabilidade** (métricas, logs, traces) para pipelines multimodais em produção.
-6. **Calcular error budgets** e modelar latência usando teoria de filas (Erlang-C).
-7. **Reconhecer e mitigar technical debt** em sistemas de ML conforme Sculley et al. (2015).
+1. **Compreender** o problema de latência ponta a ponta em um pipeline multimodal com vários modelos.
+2. **Explicar** de forma simples o que são **pipeline de inferência**, **orquestração**, **microsserviços** e **execução paralela**.
+3. **Medir** na prática o tempo total e a latência de um pipeline multimodal.
+4. **Comparar** a execução sequencial com a execução orquestrada (paralela).
+5. **Avaliar** se a resposta cabe na meta de poucos segundos (< 1 s).
+6. **Reconhecer** ferramentas e práticas reais de orquestração e MLOps (Airflow, Kubeflow, Triton, autoscaling) e seus trade-offs.
+
+---
+
+## 🧩 Caso de Uso
+
+Um **assistente virtual multimodal**: o usuário faz uma pergunta **por voz** e anexa uma **imagem** para dar
+mais contexto. O sistema executa um pipeline de vários modelos.
+
+```
+🎤 Voz ─► [ASR] ─► texto ─► [NLP] ─┐
+                                    ├─► [Lógica] ─► resposta ─► [TTS] ─► 🔊 Fala
+🖼️ Imagem ──────────► [Visão] ─────┘
+```
+
+Há **múltiplos modelos** e **etapas** que precisam ser coordenados: o ramo de **áudio (ASR+NLP)** e o ramo de
+**imagem (Visão)** são **independentes** e podem rodar **em paralelo**. Rodando tudo em série, a latência passa
+de 1 s; com **orquestração paralela**, cai para **< 1 s**. Somando otimização de cada modelo, microsserviços com
+**autoscaling** e **MLOps** ativo, o sistema fica **rápido, escalável, modular e monitorado**. É nesse desafio
+que a aula foca.
 
 ---
 
 ## 📖 Teoria-Chave
 
-### SLIs, SLOs e Error Budgets
-- **SLIs** — métricas quantitativas: latência P50/P95/P99, throughput, taxa de erros, accuracy em produção.
-- **SLOs** — metas sobre SLIs: "99 % das inferências < 200 ms em janela de 30 dias".
-- **Error Budget** — recurso gerenciável derivado do SLO (ex.: 0,1 % ≈ 43 min/mês).
+### Sequencial x Orquestrado (paralelo)
 
-### Teoria de Filas (Erlang-C)
-A latência média de espera em um sistema M/M/c:
+- **Sequencial:** cada etapa espera a anterior → tempo total é a **soma** de todas.
+- **Orquestrado:** etapas **independentes** rodam ao mesmo tempo → o trecho concorrente custa o do **ramo mais
+  lento**, não a soma.
 
-$$W_q = \\frac{C(c, \\rho)}{c\\mu - \\lambda}$$
+| Cenário | Etapas | Latência total | Atende < 1 s? |
+|---|---|---|---|
+| Sequencial | 5 | ~1000+ ms | ❌ Depende |
+| Orquestrado (paralelo) | 5 | ~700 ms | ✅ Sim |
 
-### Canary Deployment — Testes Estatísticos
-- **Latência**: teste-t de Student.
-- **Taxa de erro**: teste qui-quadrado de independência.
+### Ferramentas e práticas (referência)
 
-### Technical Debt em ML
-Sculley et al. (2015) mostram que < 5 % de um sistema real de ML é código de modelo; o restante é infraestrutura de dados, serving e monitoramento.
+| Técnica / Ferramenta | Ideia central | Ganho |
+|---|---|---|
+| **Airflow / Kubeflow** | orquestrar dependências e paralelismo | dispara ramos independentes juntos |
+| **Microsserviços de inferência** | cada modelo como serviço via API | escalar/atualizar isoladamente |
+| **Triton / TF Serving / TorchServe / BentoML** | servir modelos em produção | batching, múltiplas instâncias |
+| **Autoscaling + balanceamento** | ajustar instâncias conforme a carga | aguenta picos de uso |
+| **Monitoramento, CI/CD, feedback loop** | operar e evoluir modelos (MLOps) | qualidade e disponibilidade contínuas |
+| **Edge x Cloud (híbrido)** | decidir onde roda cada parte | latência, custo e privacidade |
 
 ---
 
 ## 🛠️ Tecnologias Utilizadas
 
-| Biblioteca | Versão mín. | Uso |
-|------------|-------------|-----|
-| Python | 3.11+ | Runtime |
-| numpy | ≥ 1.24.0 | Cálculos numéricos |
-| pandas | ≥ 2.0.0 | Manipulação de dados |
-| scikit-learn | ≥ 1.3.0 | Modelos auxiliares |
-| matplotlib | ≥ 3.7.0 | Visualizações |
-| seaborn | ≥ 0.12.0 | Gráficos estatísticos |
-| scipy | ≥ 1.11.0 | Testes estatísticos e Erlang-C |
-| pytest | ≥ 7.4.0 | Testes unitários |
-| jupyter | ≥ 1.0.0 | Notebooks |
+| Biblioteca | Versão | Uso |
+|-----------|--------|-----|
+| Python     | ≥ 3.10 | Linguagem base (inclui `concurrent.futures`) |
+| NumPy      | ≥ 1.24 | Geração de ruído e estatísticas |
+| Pandas     | ≥ 2.0  | Tabela comparativa |
+| Matplotlib | ≥ 3.7  | Visualizações |
+| Jupyter    | ≥ 1.0  | Notebook interativo |
+
+> O notebook desta aula é **leve e autocontido**: usa apenas `numpy`, `pandas` e `matplotlib`, **sem GPU**,
+> internet ou datasets externos.
 
 ---
 
@@ -55,33 +81,12 @@ Sculley et al. (2015) mostram que < 5 % de um sistema real de ML é código de m
 
 ```
 08_escalabilidade_orquestracao_multimodal/
-├── README.md                        # Este arquivo
-├── requirements.txt                 # Dependências
+├── README.md                                       # ← Você está aqui
+├── requirements.txt                                # Dependências da aula
 ├── notebooks/
-│   ├── 01_exploracao.ipynb          # EDA de métricas de serving
-│   ├── 02_treinamento.ipynb         # Simulação de auto-scaling e canary
-│   └── 03_avaliacao.ipynb           # Avaliação de SLOs e testes estatísticos
-├── src/
-│   ├── __init__.py
-│   ├── data_preprocessing.py        # Geração e pré-processamento de dados de inferência
-│   ├── model.py                     # Simuladores: MultimodalOrchestrator, SLOMonitor
-│   ├── training.py                  # Auto-scaling e canary deployment
-│   ├── evaluation.py                # Error budgets, testes estatísticos, métricas SRE
-│   └── utils.py                     # Serialização, configuração, logging
-├── data/
-│   ├── raw/                         # Dados brutos de simulação
-│   │   └── dataset.csv
-│   ├── processed/                   # Dados processados
-│   └── README.md                    # Descrição dos dados
-├── tests/
-│   ├── __init__.py
-│   ├── test_preprocessing.py
-│   ├── test_model.py
-│   └── test_evaluation.py
+│   └── 00_assistente_multimodal_orquestracao.ipynb # Notebook único: sequencial x orquestrado (paralelo)
 └── outputs/
-    ├── models/
-    ├── figures/
-    └── logs/
+    └── figures/                                    # (opcional) figuras exportadas
 ```
 
 ---
@@ -93,78 +98,55 @@ Sculley et al. (2015) mostram que < 5 % de um sistema real de ML é código de m
 ```bash
 cd 08_escalabilidade_orquestracao_multimodal
 pip install -r requirements.txt
+
+# ou, o mínimo para este notebook:
+pip install numpy pandas matplotlib jupyter
 ```
 
-### 2. Gerar dataset sintético
+### 2. Executar o notebook
 
 ```bash
-python -c "from src.data_preprocessing import DataPreprocessor; DataPreprocessor().generate_and_save()"
+jupyter notebook notebooks/00_assistente_multimodal_orquestracao.ipynb
 ```
 
-### 3. Executar notebooks (sequencial)
+O notebook é autocontido e executa de ponta a ponta, cobrindo:
 
-```bash
-jupyter notebook notebooks/01_exploracao.ipynb
-# depois  → notebooks/02_treinamento.ipynb
-# depois  → notebooks/03_avaliacao.ipynb
-```
-
-### 4. Executar via scripts
-
-```python
-from src.data_preprocessing import DataPreprocessor
-from src.model import MultimodalOrchestrator
-from src.training import run_autoscaling_simulation
-from src.evaluation import evaluate_slos
-
-dp = DataPreprocessor()
-df = dp.load_data("data/raw/dataset.csv")
-df_clean = dp.clean_data(df)
-```
+1. Contexto do assistente multimodal e a meta de resposta fluida (< 1 s).
+2. Conceitos de pipeline, orquestração, microsserviços, execução paralela e MLOps.
+3. Hands-on simulando dois cenários (pipeline sequencial × orquestrado/paralelo).
+4. Comparação dos resultados em tabela e gráfico (tempo total ponta a ponta).
+5. Discussão de ferramentas reais de orquestração/MLOps e seus trade-offs.
+6. Conclusão sobre atender (ou não) à meta de latência com um sistema modular.
 
 ---
 
 ## 📊 Datasets
 
-Dataset sintético simulando métricas de um sistema de inferência multimodal em produção. Veja detalhes em [`data/README.md`](data/README.md).
-
----
-
-## 🧪 Testes
-
-```bash
-cd 08_escalabilidade_orquestracao_multimodal
-pytest tests/ -v
-```
+Esta versão simplificada **não depende de dataset externo**: os tempos de cada etapa são simulados
+sinteticamente dentro do próprio notebook, permitindo medir latência ponta a ponta sem GPU.
 
 ---
 
 ## 📚 Referências
 
-- BEYER, B. et al. **Site Reliability Engineering: How Google Runs Production Systems**. O'Reilly, 2016.
-- SCULLEY, D. et al. Hidden Technical Debt in Machine Learning Systems. **NeurIPS**, 2015.
-- PALEYES, A.; URMA, R.-G.; LAWRENCE, N. D. Challenges in Deploying Machine Learning. **ACM Computing Surveys**, 2022.
-- BREWER, E. Towards Robust Distributed Systems. **PODC**, 2000.
-- GILBERT, S.; LYNCH, N. Brewer's Conjecture … **ACM SIGACT News**, 2002.
-- SRIDHARAN, C. **Distributed Systems Observability**. O'Reilly, 2018.
-- BURKOV, A. **Machine Learning Engineering**. True Positive Inc., 2020.
+Referências principais relacionadas aos conceitos da aula:
 
----
-
-## 🎥 Vídeos Relacionados
-
-- **Vídeo 1** — Introdução a SRE para ML: SLIs, SLOs e Error Budgets.
-- **Vídeo 2** — Dashboard de monitoramento de SLOs em ação.
-- **Vídeo 3** — Canary deployment completo com análise estatística.
-- **Vídeo 4** — Pipeline de observabilidade com Application Insights.
+1. **Sculley, D. et al.** (2015). Hidden Technical Debt in Machine Learning Systems. *NeurIPS 2015.*
+2. **Baylor, D. et al.** (2017). TFX: A TensorFlow-Based Production-Scale ML Platform. *KDD 2017.*
+3. **Baltrušaitis, T. et al.** (2019). Multimodal Machine Learning: A Survey and Taxonomy. *IEEE TPAMI.*
+4. **Apache Airflow** (2020). Documentação oficial — DAGs e orquestração de tarefas.
+5. **Kubeflow** (2021). Kubeflow Pipelines — orquestração de fluxos de ML em Kubernetes.
 
 ---
 
 ## 🔗 Links Úteis
 
-- [KServe Documentation](https://kserve.github.io/website/)
-- [Seldon Core Documentation](https://docs.seldon.io/projects/seldon-core/)
-- [BentoML Documentation](https://docs.bentoml.com)
-- [Azure ML Managed Online Endpoints](https://learn.microsoft.com/azure/machine-learning/concept-endpoints)
-- [OpenTelemetry](https://opentelemetry.io/)
-- [Erlang-C Calculator Reference](https://en.wikipedia.org/wiki/Erlang_(unit)#Erlang_C_formula)
+- [Apache Airflow](https://airflow.apache.org/)
+- [Kubeflow Pipelines](https://www.kubeflow.org/docs/components/pipelines/)
+- [NVIDIA Triton Inference Server](https://developer.nvidia.com/triton-inference-server)
+- [BentoML](https://www.bentoml.com/)
+- [TorchServe](https://pytorch.org/serve/)
+
+---
+
+*Material elaborado para a disciplina de Engenharia de Machine Learning — FIAP PosTech.*
