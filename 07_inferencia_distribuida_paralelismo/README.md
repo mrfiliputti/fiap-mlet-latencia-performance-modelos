@@ -1,194 +1,152 @@
-# Aula 07 — Inferência Distribuída e Paralelismo de Modelos
+# Aula 07 — Inferência Distribuída e Paralelismo
+
+> Disciplina: Engenharia de Machine Learning — FIAP PosTech
+
+---
 
 ## 🎯 Objetivos de Aprendizagem
 
-Ao final desta aula, o aluno será capaz de:
+Ao final desta aula o aluno será capaz de:
 
-1. **Compreender** a taxonomia de estratégias de paralelismo (data, tensor e pipeline) e quando aplicar cada uma
-2. **Implementar** simulações de tensor parallelism e pipeline parallelism para compreender particionamento de modelos
-3. **Analisar** o impacto de PagedAttention no gerenciamento de KV-Cache, comparando alocação contígua vs. paginada
-4. **Projetar** schedulers de continuous batching que maximizam throughput sob restrições de memória
-5. **Avaliar** speculative decoding como estratégia de redução de latência com modelos draft
-6. **Medir** métricas de serving (throughput, latência P50/P95/P99) e definir SLOs para sistemas de inferência
-7. **Comparar** frameworks de serving distribuído (vLLM, Triton, TGI) quanto a trade-offs de performance
+1. **Compreender** por que um único servidor vira gargalo sob alta carga de inferência.
+2. **Explicar** de forma simples o que são **paralelismo de dados**, **paralelismo de modelos**, **batching** e **balanceamento de carga**.
+3. **Medir** na prática a latência média e o throughput (req/s) de um sistema de inferência.
+4. **Comparar** uma arquitetura monolítica (1 servidor) com um cluster distribuído (N servidores).
+5. **Avaliar** se o sistema aguenta um pico de carga de milhares de requisições por segundo.
+6. **Reconhecer** tecnologias reais (Triton, TensorFlow Serving, TorchServe, BentoML, NVIDIA Dynamo) e seus trade-offs.
+
+---
+
+## 🧩 Caso de Uso
+
+Uma **plataforma de streaming de vídeos** (pense em um "YouTube" ou "Netflix") usa modelos de ML para
+**recomendar vídeos em tempo real**. A cada abertura do app ou fim de vídeo, um modelo de deep learning gera
+uma nova lista personalizada de recomendações.
+
+```
+👥 Usuários → [balanceador de carga] → [servidor 1 | servidor 2 | ... | servidor N] → 🎬 recomendações
+```
+
+Com poucos usuários, **1 servidor com GPU** bastava. Com **milhões de usuários** e **picos de tráfego**
+(~5.000 req/s), um servidor sozinho (~500 req/s) **satura**, formando **filas** e aumentando a latência. A
+solução foi **escalar horizontalmente**: um **cluster de 10 servidores** com **balanceador de carga**, que
+elevou o throughput em ~**10x**, manteve a latência baixa e trouxe **alta disponibilidade**. É nesse desafio
+que a aula foca.
+
+---
 
 ## 📖 Teoria-Chave
 
-### Paralelismo em Deep Learning
+### Paralelismo de dados x paralelismo de modelos
 
-A demanda computacional de modelos de linguagem de grande escala transformou fundamentalmente
-a arquitetura de sistemas de inferência. Enquanto o GPT-2 (2019) operava em uma única GPU com
-1.5B parâmetros, modelos como LLaMA-2 70B exigem dezenas de aceleradores em conjunto
-(Brown et al., 2020).
+- **Paralelismo de dados:** várias **cópias do modelo** em paralelo; o balanceador distribui as requisições.
+  Escala o **throughput** (mais usuários ao mesmo tempo).
+- **Paralelismo de modelos:** uma **única inferência** dividida entre vários dispositivos. Necessário para
+  modelos **gigantes** (LLMs 70B+), com maior complexidade de comunicação.
 
-**Estratégias de Paralelismo:**
+| Cenário | Arquitetura | Servidores | Throughput | Atende ao pico (5.000 req/s)? |
+|---|---|---|---|---|
+| Original | Monolítica | 1 | ~500 req/s | ❌ Não |
+| Solução  | Distribuída | 10 | ~5.000 req/s | ✅ Sim |
 
-| Estratégia | Caso de Uso | Overhead | Escalabilidade |
-|---|---|---|---|
-| Data Parallelism | Modelo cabe em 1 GPU | Baixo | Linear |
-| Tensor Parallelism | Modelo grande, baixa latência | Médio | 8–16 GPUs |
-| Pipeline Parallelism | Modelos muito grandes | Baixo-médio | Alta |
-| ZeRO-Inference | Memória limitada | Médio | Alta |
+### Tecnologias de inferência distribuída (referência)
 
-### PagedAttention e KV-Cache
+| Ferramenta / Técnica | Ideia central | Ganho |
+|---|---|---|
+| **Balanceador de carga** | distribui requisições entre servidores | evita filas e sobrecarga |
+| **Batching dinâmico** | agrupa requisições em lotes | máximo throughput por GPU |
+| **NVIDIA Triton** | servidor de inferência multi-framework | múltiplas instâncias + monitoramento |
+| **TF Serving / TorchServe / BentoML** | servir modelos em produção | escalonamento e versionamento |
+| **NVIDIA Dynamo / NeMo Megatron** | inferência desagregada para LLMs enormes | ~30x mais inferências/s (70B+) |
+| **Auto-scaling / tolerância a falhas** | ajusta instâncias e cobre falhas | alta disponibilidade |
 
-O mecanismo de KV-Cache é fundamental para inferência eficiente de Transformers autoregressivos.
-PagedAttention (Kwon et al., 2023) gerencia memória em blocos de tamanho fixo, inspirando-se
-em memória virtual de sistemas operacionais. Para uma sequência com $n$ tokens e blocos de
-tamanho $B$, o número de blocos é $\lceil n/B \rceil$.
-
-### Continuous Batching
-
-Continuous batching (Yu et al., 2022) trata cada iteração de geração como unidade de scheduling
-independente. Quando uma requisição completa, é imediatamente removida do batch e uma nova é
-inserida, mantendo o batch maximamente preenchido.
-
-### Speculative Decoding
-
-Speculative decoding (Leviathan et al., 2023) utiliza um modelo draft menor para gerar
-candidatos de múltiplos tokens, verificados em paralelo pelo modelo principal. O speedup
-depende da acceptance rate $\alpha$:
-
-$$\text{speedup} = \frac{K \cdot \alpha}{\text{cost}_{\text{draft}} + \text{cost}_{\text{verify}}}$$
-
-### Lei de Amdahl e Gustafson
-
-A Lei de Amdahl limita o speedup pela fração sequencial: se 10% do código é sequencial,
-o speedup máximo é 10×. Gustafson (1988) propõe perspectiva complementar onde, com problemas
-escaláveis, os ganhos de paralelização podem ser substancialmente maiores.
+---
 
 ## 🛠️ Tecnologias Utilizadas
 
 | Biblioteca | Versão | Uso |
-|---|---|---|
-| Python | ≥3.10 | Linguagem base |
-| NumPy | ≥1.24.0 | Computação numérica |
-| Pandas | ≥2.0.0 | Manipulação de dados |
-| Matplotlib | ≥3.7.0 | Visualizações |
-| Seaborn | ≥0.12.0 | Gráficos estatísticos |
-| PyTorch | ≥2.1.0 | Framework de deep learning |
-| pytest | ≥7.4.0 | Testes unitários |
+|-----------|--------|-----|
+| Python     | ≥ 3.10 | Linguagem base |
+| NumPy      | ≥ 1.24 | Geração de tempos e estatísticas |
+| Pandas     | ≥ 2.0  | Tabela comparativa |
+| Matplotlib | ≥ 3.7  | Visualizações |
+| Jupyter    | ≥ 1.0  | Notebook interativo |
 
-> **Nota:** Esta aula utiliza simulações pedagógicas dos conceitos de paralelismo e serving
-> distribuído. Para execução real com vLLM e multi-GPU, consulte a seção Hands On do
-> documento acadêmico e os requisitos de hardware (2× A10G ou equivalente).
+> O notebook desta aula é **leve e autocontido**: usa apenas `numpy`, `pandas` e `matplotlib`, **sem GPU**,
+> internet ou datasets externos.
+
+---
 
 ## 📂 Estrutura de Arquivos
 
 ```
 07_inferencia_distribuida_paralelismo/
-├── README.md                        # Este arquivo
-├── requirements.txt                 # Dependências da aula
+├── README.md                                         # ← Você está aqui
+├── requirements.txt                                  # Dependências da aula
 ├── notebooks/
-│   ├── 01_exploracao.ipynb          # Exploração de paralelismo e memória
-│   ├── 02_treinamento.ipynb         # Simulação de serving distribuído
-│   └── 03_avaliacao.ipynb           # Benchmarks e avaliação de SLOs
-├── src/
-│   ├── __init__.py                  # Inicialização do pacote
-│   ├── data_preprocessing.py        # Geração e preparação de workloads
-│   ├── model.py                     # Simuladores de paralelismo e serving
-│   ├── training.py                  # Lógica de execução de inferência
-│   ├── evaluation.py                # Métricas de latência e throughput
-│   └── utils.py                     # Utilitários (save/load, configs)
-├── data/
-│   ├── raw/
-│   │   └── dataset.csv              # Workload sintético de requisições
-│   ├── processed/                   # Dados processados (gerado em runtime)
-│   └── README.md                    # Documentação do dataset
-├── tests/
-│   ├── __init__.py
-│   ├── test_preprocessing.py        # Testes do pré-processamento
-│   ├── test_model.py                # Testes dos simuladores
-│   └── test_evaluation.py           # Testes de avaliação
+│   └── 00_recomendacoes_inferencia_distribuida.ipynb # Notebook único: monolítico x cluster distribuído
 └── outputs/
-    ├── models/                      # Configurações salvas
-    ├── figures/                     # Gráficos gerados
-    └── logs/                        # Logs de benchmark
+    └── figures/                                      # (opcional) figuras exportadas
 ```
+
+---
 
 ## 🚀 Como Executar
 
-### 1. Instalação de Dependências
+### 1. Instalar dependências
 
 ```bash
 cd 07_inferencia_distribuida_paralelismo
 pip install -r requirements.txt
+
+# ou, o mínimo para este notebook:
+pip install numpy pandas matplotlib jupyter
 ```
 
-### 2. Gerar Dataset (se necessário)
+### 2. Executar o notebook
 
 ```bash
-python -c "from src.data_preprocessing import WorkloadPreprocessor; WorkloadPreprocessor.generate_synthetic_workload('data/raw/dataset.csv')"
+jupyter notebook notebooks/00_recomendacoes_inferencia_distribuida.ipynb
 ```
 
-### 3. Executar Notebooks (sequencialmente)
+O notebook é autocontido e executa de ponta a ponta, cobrindo:
 
-```bash
-jupyter notebook notebooks/01_exploracao.ipynb
-jupyter notebook notebooks/02_treinamento.ipynb
-jupyter notebook notebooks/03_avaliacao.ipynb
-```
+1. Contexto da plataforma de streaming e a necessidade de recomendações em tempo real.
+2. Conceitos de inferência distribuída, paralelismo de dados/modelos, batching e balanceamento.
+3. Hands-on simulando dois cenários (1 servidor × cluster de 10 servidores).
+4. Comparação dos resultados em tabela e gráfico (latência, throughput, escalabilidade).
+5. Discussão de tecnologias reais (Triton, TF Serving, TorchServe, BentoML, Dynamo) e trade-offs.
+6. Conclusão sobre atender (ou não) ao pico de carga com alta disponibilidade.
 
-### 4. Executar via Scripts Python
-
-```bash
-python -m src.training
-```
+---
 
 ## 📊 Datasets
 
-O dataset utilizado é um **workload sintético** que simula requisições de inferência LLM com
-propriedades variáveis de comprimento de prompt e geração. Consulte [data/README.md](data/README.md)
-para detalhes completos.
+Esta versão simplificada **não depende de dataset externo**: as requisições e os tempos de inferência são
+simulados sinteticamente dentro do próprio notebook, permitindo medir latência e throughput sem GPU.
 
-- **Instâncias:** 5.000 requisições sintéticas
-- **Features:** 8 (comprimento do prompt, tokens gerados, tipo de modelo, etc.)
-- **Target:** Métricas de latência simuladas
-
-## 🧪 Testes
-
-```bash
-# Executar todos os testes
-pytest tests/ -v
-
-# Executar com cobertura
-pytest tests/ -v --tb=short
-```
+---
 
 ## 📚 Referências
 
-1. **Brown, T. et al.** (2020). "Language Models are Few-Shot Learners." *NeurIPS 2020*.
-   DOI: 10.48550/arXiv.2005.14165.
-2. **Kwon, W. et al.** (2023). "Efficient Memory Management for Large Language Model Serving
-   with PagedAttention." *SOSP 2023*. DOI: 10.1145/3600006.3613165.
-3. **Yu, G.-I. et al.** (2022). "Orca: A Distributed Serving System for Transformer-Based
-   Generative Models." *OSDI 2022*.
-4. **Leviathan, Y. et al.** (2023). "Fast Inference from Transformers via Speculative Decoding."
-   *ICML 2023*.
-5. **Shoeybi, M. et al.** (2019). "Megatron-LM: Training Multi-Billion Parameter Language
-   Models Using Model Parallelism." DOI: 10.48550/arXiv.1909.08053.
-6. **Rajbhandari, S. et al.** (2020). "ZeRO: Memory Optimizations Toward Training Trillion
-   Parameter Models." *SC 2020*. DOI: 10.1109/SC41405.2020.00024.
-7. **Huang, Y. et al.** (2019). "GPipe: Efficient Training of Giant Neural Networks using
-   Pipeline Parallelism." *NeurIPS 2019*.
-8. **Narayanan, D. et al.** (2019). "PipeDream: Generalized Pipeline Parallelism for DNN
-   Training." *SOSP 2019*.
-9. **Gustafson, J. L.** (1988). "Reevaluating Amdahl's Law." *Communications of the ACM*,
-   31(5), 532–533.
-10. **Pope, R. et al.** (2022). "Efficiently Scaling Transformer Inference." *MLSys 2022*.
+Referências principais relacionadas aos conceitos da aula:
 
-## 🎥 Vídeos Relacionados
+1. **Crankshaw, D. et al.** (2017). Clipper: A Low-Latency Online Prediction Serving System. *NSDI 2017.*
+2. **Olston, C. et al.** (2017). TensorFlow-Serving: Flexible, High-Performance ML Serving. *arXiv:1712.06139.*
+3. **Shoeybi, M. et al.** (2019). Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism. *arXiv:1909.08053.*
+4. **NVIDIA** (2021). Triton Inference Server: Architecture and Best Practices. *Documentação técnica.*
+5. **Reddi, V. J. et al.** (2020). MLPerf Inference Benchmark. *ISCA 2020.*
 
-- **Vídeo 1:** Fundamentos de paralelismo — data, tensor e pipeline parallelism
-- **Vídeo 2:** Visualização detalhada de PagedAttention gerenciando blocos de memória
-- **Vídeo 3:** Configuração prática de vLLM com tensor parallelism em Azure ML
-- **Vídeo 4:** Benchmark comparativo vLLM vs. Hugging Face Transformers (8× speedup)
+---
 
 ## 🔗 Links Úteis
 
-- [vLLM Documentation](https://docs.vllm.ai/)
 - [NVIDIA Triton Inference Server](https://developer.nvidia.com/triton-inference-server)
-- [Hugging Face Text Generation Inference](https://huggingface.co/docs/text-generation-inference/)
-- [Megatron-LM (NVIDIA)](https://github.com/NVIDIA/Megatron-LM)
-- [DeepSpeed ZeRO](https://www.deepspeed.ai/tutorials/zero/)
-- [PagedAttention Paper (SOSP 2023)](https://arxiv.org/abs/2309.06180)
+- [TensorFlow Serving](https://www.tensorflow.org/tfx/guide/serving)
+- [TorchServe](https://pytorch.org/serve/)
+- [BentoML](https://www.bentoml.com/)
+- [NVIDIA Dynamo](https://developer.nvidia.com/dynamo)
+
+---
+
+*Material elaborado para a disciplina de Engenharia de Machine Learning — FIAP PosTech.*
